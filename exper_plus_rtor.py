@@ -1,10 +1,7 @@
 '''
-Author: root root@root.com
+Author: ziyuezi
 Date: 2025-12-23 10:22:30
-LastEditors: root root@root.com
 LastEditTime: 2026-01-03 21:20:34
-FilePath: /rotr/experiment.py
-Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 '''
 import data_io as io
 import numpy as np
@@ -38,11 +35,11 @@ if __name__ == '__main__':
         # print(params['mu1'])
         for r in range(replications):
             params = dict(
-                R=Ru,   # 这是预设的秩
-                Ru=5,  # Ru, 这是真实秩
-                mu1=mu1,  # 9e-3,mu1
-                mu2=0.0005, # 这个是被作者简化固定了,控制异常值的获取
-                mu3=1e-10, # 1e-10,1.5e-3  这个也被固定了，之后会随着算法动态调整
+                R=Ru,   
+                Ru=5,  
+                mu1=mu1, 
+                mu2=0.0005, 
+                mu3=1e-10, 
                 tol=1e-6,
                 max_itr=100,
                 replications=replications,
@@ -50,19 +47,19 @@ if __name__ == '__main__':
                 percentile_x = 0.1,
                 outlier_mag = 20,
                 scale=10,
-                # EIV的初始化参数
+
                 gamma = 2.0,
-                # tucker分解数据的生成参数
+
                 tucker_ranks = [5,5,5,5],
-                init_scale_gen_core = 0.011, # 控制核心张量数值大小0
-                ## rotr的参数 
-                ranks = [5,5,5,5], # 预设的tucker秩
-                lambda_x =0.001 , # 越大,异常值获取越少；越小，异常值获取越多
-                lambda_y =  0.011, # 和rtot一样，都是控制y的异常值获取.越小越能获取异常值
-                lambda_b =   0.06, # 控制B的复杂度
-                fista_iter = 100 , # S_x 的内部迭代次数。
-                sx_max_step =  0.1,  # 在 ISTA/FISTA 算法中，为梯度下降的步长限制
-                manifold_lr = 0.015 , # 从黄金的0.001开始试
+                init_scale_gen_core = 0.011, 
+
+                ranks = [5,5,5,5], 
+                lambda_x =0.001 , 
+                lambda_y =  0.011, 
+                lambda_b =   0.06, 
+                fista_iter = 100 , 
+                sx_max_step =  0.1,  
+                manifold_lr = 0.015 , 
                 init_scale =  0.02 
             )
             # params = io.gen_sync_data(**params)
@@ -70,16 +67,15 @@ if __name__ == '__main__':
             #params = io.gen_rotr_data_tucker_y_only(**params)
             params = io.gen_rotr_mixed_data(**params)
             # params = io.gen_egg_data(**params)
-            # params['R'] = Ru
-            # params['mu1'] = mu1 * 1e-3
+
             list_params.append(params)
 
             # print('============')
             #for model in [ ROTR_test(**params)]:
             for model in [ROTR_fist_y(**params)]:
                 start = time.time()
-                # ja, B, AIC, s = model.fit(verbose=False) # 目的就是为了返回B ja是什么？
-                rpe, B,sparsity_sx, sparsity_sy = model.fit(verbose=True) # 目的就是为了返回B ja是什么？ 后面返回的稀疏性不影响
+                # ja, B, AIC, s = model.fit(verbose=False)
+                rpe, B,sparsity_sx, sparsity_sy = model.fit(verbose=True)
                 end = time.time()
 
 
@@ -88,17 +84,9 @@ if __name__ == '__main__':
                 y_pre = tl.partial_tensor_to_vec(y_pre, skip_begin=1)
                 m_test = np.mean(y_test, axis=1).reshape(-1, 1)
                 m_pre = np.mean(y_pre, axis=1).reshape(-1, 1)
-                y_pre = y_pre - m_pre + m_test  #  强制将预测值的均值对齐到真实值的均值
+                y_pre = y_pre - m_pre + m_test  
 
-                # data = dict(
-                #     y=sum([y_pre[n].flatten().tolist() for n in range(len(y_pre))], []) + sum([y_test[n].flatten().tolist() for n in range(len(y_test))], []),
-                #     time=[i for i in range(1, 204)] * 2 * len(y_pre),
-                #     type=[model.name for _ in range(203)] * len(y_pre) + ['true' for _ in range(203)] * len(y_test),
-                #     sample=[i for i in range(len(y_pre)) for _ in range(203)] + [i for i in range(len(y_pre)) for _ in range(203)]
-                # )
-                # df = pd.DataFrame(data=data)
-                # fig = px.line(df, x='time', y='y', color='sample', line_group='type', line_dash='type')
-                # fig.show()
+
 
                 rpe = np.linalg.norm(y_pre - y_test) / np.linalg.norm(y_test)
                 dict_Bs[model.name].append(B)

@@ -24,8 +24,7 @@ def ttt(x, b, L, dims):
             [k for k in range(len(dims[:L]))]
         ]
     )
-# 上述代码可以把dims拿掉
-# 维度会保留吗？执行之后？
+
 
 
 def aic(y_true, y_pre, s_pre, r, b):
@@ -279,7 +278,7 @@ class RPCA:
 
 
 
-# 第二个实验
+
 
 class TOT_tucker:
     def __init__(self, **params):
@@ -718,8 +717,6 @@ class ROTR_fist_y:
 class RPCA_Double:
     def __init__(self, **params):
         self.params = params
-        # 允许分别为 X 和 Y 设置正则化参数 lambda
-        # 如果没有指定 reg_x/reg_y，则回退到通用的 'reg'，最后回退到默认值
         default_reg = params.get('reg', 1.5e-1)
         self.reg_x = params.get('reg_x', default_reg)
         self.reg_y = params.get('reg_y', default_reg)
@@ -731,82 +728,27 @@ class RPCA_Double:
             print('   Double-sided RPCA (Benchmark)        ')
             print('========================================')
 
-        # 1. 对 Y 进行鲁棒 PCA 去噪
-        # 注意：这里假设 robust_pca 函数能处理 tensor 或者内部做了展平
         if verbose: print(f"Runing RPCA on Y (reg={self.reg_y})...")
         y_clean, S_y = robust_pca(self.params['y'], reg_E=self.reg_y, verbose=False)
 
-        # 2. 对 X 进行鲁棒 PCA 去噪 (新增部分)
+
         if verbose: print(f"Runing RPCA on X (reg={self.reg_x})...")
         x_clean, S_x = robust_pca(self.params['x'], reg_E=self.reg_x, verbose=False)
 
-        # 3. 打印统计信息
         if verbose:
             sparsity_sy = (S_y.size - np.count_nonzero(S_y)) / S_y.size
             sparsity_sx = (S_x.size - np.count_nonzero(S_x)) / S_x.size
             print(f'Done. Sparsity(Sy)={sparsity_sy:.2%}, Sparsity(Sx)={sparsity_sx:.2%}')
 
-        # 4. 将清洗后的数据更新回 params
-        # 关键步骤：TOT 模型将使用去噪后的 x_clean 和 y_clean 进行训练
         self.params['x'] = x_clean
         self.params['y'] = y_clean
         
-        # 5. 运行 TOT 回归
+
         if verbose: print("Fitting TOT model on cleaned data...")
         tot = TOT(**self.params)
         
-        # 返回 TOT 的结果 (通常是 RPE, B_est 等)
-        # 注意：这里返回的 B 是基于干净数据算出来的
+
         return tot.fit(verbose=verbose)
 
 
 
-if __name__ == '__main__':
-    dims = (15, 20, 5, 10)
-    N = 30
-    L = 2
-    M = 2
-    params = dict(
-        # dims=(15, 20, 5, 10),
-        # idx=[i for i in range(len(dims))],
-        # L=2,
-        # M=2,
-        # N=30,
-        R=3,
-        mu1=5.5e-3,
-        mu2=1e-3,
-        mu3=1e-4,
-        tol=1e-4,
-        max_itr=100,
-        density=.2,
-        # x=np.random.rand(N, *dims[:L]),
-        # y=np.random.rand(N, *dims[L:])
-    )
-    params = io.gen_lambda_data(**params)
-
-    tot = TOT(**params)
-    rtot = RTOT(**params)
-    rpca = RPCA(**params)
-
-    # _, B_rtot = rtot.fit(verbose=True)
-    # _, B_tot = tot.fit(verbose=True)
-    _, B_rpca = rpca.fit(verbose=True)
-
-    y_true_list = []
-    y_pre_list = []
-    for x, y in zip(params['x_test'], params['y_test']):
-        dims = params['dims']
-        x = x.reshape(1, dims[0], dims[1])
-        y_pre = ttt(x, B_rpca, params['L'], params['dims'])
-        y_pre_list.append(y_pre.flatten())
-        y_true_list.append(y.flatten())
-    y_true_list, y_pre_list = np.array(y_true_list).T, np.array(y_pre_list).T
-    y_pre_list = y_pre_list - np.mean(y_pre_list, axis=0) + np.mean(y_true_list, axis=0)
-    data = np.concatenate((y_true_list, y_pre_list), axis=0)
-    data = pd.DataFrame(data=data, columns=[i for i in range(1, data.shape[1] + 1)])
-    data['time'] = [i for i in range(1, 204)] * 2
-    data['type'] = ['true' for _ in range(203)] + ['pre' for _ in range(203)]
-
-    for i in range(1, 10):
-        fig = px.line(data, x='time', y=i, line_group='type', color='type')
-        fig.show()
