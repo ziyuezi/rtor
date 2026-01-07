@@ -15,9 +15,9 @@ from tensorly import tucker_to_tensor
 脚本及其作用：
 1.加载神经科学数据；2.生成合成数据
 函数
-1.ttt 定义核心算子，张量收缩积
-2.mcp函数。
-3.gen_lambda_data ，gen_egg_data 加载真实数据
+1.ttt 定义核心算子，张量收缩积；
+2.mcp函数；
+3.一系列生成数据函数；
 4.合成数据生成。
 
 """

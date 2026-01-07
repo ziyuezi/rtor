@@ -47,7 +47,7 @@ if __name__ == '__main__':
                 tol=1e-6,
                 max_itr=1000,
                 replications=replications,
-                percentile=percentile, # 当前的 D
+                percentile=percentile, 
                 percentile_x = 0.1,
                 outlier_mag = 20,
                 scale=10,
@@ -85,7 +85,6 @@ if __name__ == '__main__':
                 y_pre = ttt(params['x_test'], B, params['L'], params['dims'])
                 y_pre = tl.partial_tensor_to_vec(y_pre, skip_begin=1)
                 
-                # 均值对齐 (根据源代码逻辑)
                 m_test = np.mean(y_test, axis=1).reshape(-1, 1)
                 m_pre = np.mean(y_pre, axis=1).reshape(-1, 1)
                 y_pre = y_pre - m_pre + m_test 
