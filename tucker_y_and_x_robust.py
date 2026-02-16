@@ -23,7 +23,7 @@ if __name__ == '__main__':
     mu1_fixed = 0.009
     
     # 表格的列：D 的不同取值
-    #bad_y_ratio_list = [0.15]
+
     bad_y_ratio_list = [ 0.03,0.05,0.07,0.1,0.12,0.15]
     #percentile_list = [0]
     # 存储结果结构: results[method][d_value] = [rpe_1, rpe_2, ..., rpe_rep]
