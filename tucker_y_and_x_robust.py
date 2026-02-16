@@ -88,10 +88,10 @@ if __name__ == '__main__':
             
             models_list = [
                 
-                RPCA_Double(**params),
+                # RPCA_Double(**params),
                 ROTR_fist_y(**params),
-                RTOT_tucker(**params),
-                TOT_tucker(**params)
+                # RTOT_tucker(**params),
+                # TOT_tucker(**params)
 
             ]
 
@@ -159,5 +159,5 @@ if __name__ == '__main__':
             row_str += f"{cell_str:<12}"
         
         print(row_str)
-    
+
     print("="*100)
