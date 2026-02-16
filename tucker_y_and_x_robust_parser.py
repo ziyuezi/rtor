@@ -66,7 +66,7 @@ if __name__ == '__main__':
 
     final_results = defaultdict(lambda: defaultdict(list))
 
-    print(f"开始实验: R={args.Ru}, Replications={args.replications}, D_list={args.bad_y_ratio_list}")
+    print(f"开始实验: R={args.R}, Replications={args.replications}, D_list={args.bad_y_ratio_list}")
     print(f"运行模型: {args.models}")
 
     for percentile in args.bad_y_ratio_list:
@@ -144,7 +144,7 @@ if __name__ == '__main__':
         # 简单处理：遍历结果字典里匹配的项
         matching_names = [k for k in final_results.keys() if method_name in k.lower()]
         for actual_name in matching_names:
-            row_str = f"{args.Ru:<5} {actual_name:<10}"
+            row_str = f"{args.R:<5} {actual_name:<10}"
             for p in args.bad_y_ratio_list:
                 rpes = final_results[actual_name][p]
                 cell_str = f"{np.min(rpes):.4f}" if rpes else "N/A"
