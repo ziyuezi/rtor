@@ -653,7 +653,7 @@ class ROTR_fist_y:
                 return (delta_G + self.lambda_b * G_curr).ravel()
 
             A_op = LinearOperator((dim_G, dim_G), matvec=matvec_G)
-            G_opt_vec, info = cg(A_op, b_vec, x0=self.G.ravel(), tol=1e-5)
+            G_opt_vec, info = cg(A_op, b_vec, x0=self.G.ravel(), rtol=1e-5)
             self.G = G_opt_vec.reshape(self.ranks)
 
             # ==========================================
