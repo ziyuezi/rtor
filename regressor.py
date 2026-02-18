@@ -655,7 +655,7 @@ class ROTR_fist_y:
                 G_curr = v.reshape(self.ranks)
                 axes_X = list(range(1, L + 1))
                 axes_G = list(range(L))
-                Y_pred_core = np.tensordot(X_tilde, G_curr, axes=(axes_X, axes_G))                                                                                       .tensordot(X_tilde, G_curr, axes=(axes_X, axes_G))
+                Y_pred_core = np.tensordot(X_tilde, G_curr, axes=(axes_X, axes_G))
                 delta_G = np.tensordot(X_tilde, Y_pred_core, axes=([0], [0]))
                 return (delta_G + self.lambda_b * G_curr).ravel()
                 # 函数看着没啥问题  
