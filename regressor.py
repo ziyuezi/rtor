@@ -534,7 +534,7 @@ class ROTR_fist_y:
         self.lambda_b = params['lambda_b']
 
         # 优化参数
-        self.max_iter = params['max_itr']
+        self.max_iter = params['ROTR_max_iter']
         self.tol = params['tol']
         self.fista_iter = params['fista_iter']
         self.sx_max_step = params['sx_max_step']
