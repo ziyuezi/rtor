@@ -603,6 +603,7 @@ class ROTR_fist_y:
 
             # 动态计算步长
             lipschitz_const = norm(B.ravel()) ** 2 + 1e-8
+
             step_size_Sx = 1.0 / lipschitz_const
             step_size_Sx = min(step_size_Sx, self.sx_max_step)  # 截断步长
 
@@ -614,11 +615,17 @@ class ROTR_fist_y:
                 axes_res = list(range(1, M + 1))
                 axes_B_out = list(range(L, L + M))
                 Gradient_Step = np.tensordot(Residual_Sx, B, axes=(axes_res, axes_B_out))
+                # 维度能匹配上吗？能匹配上，输出空间的维度是O1 到M  输入空间的维度是：P1 到PL
+                # 这里能够实现维度计算回输入空间
+
 
                 # 更新 Sx
-                Sx_temp = self.Sx + step_size_Sx * Gradient_Step  # 梯度更新方向 取负号，甚至都不影响结果？
+                #Sx_temp = self.Sx + step_size_Sx * Gradient_Step  # 梯度更新方向 取负号，甚至都不影响结果？
+                # 似乎应该是减。。。梯度下降就是该减。。。
+                Sx_temp = self.Sx - step_size_Sx * Gradient_Step
                 # 你就没有Sx的异常值
                 self.Sx = soft_thresholding(Sx_temp, self.lambda_x * step_size_Sx)
+
             # ==========================================
             # Step 2: 更新响应异常 Sy (Soft Thresholding)
             # ==========================================
@@ -641,20 +648,23 @@ class ROTR_fist_y:
                 Y_tilde_core = mode_dot(Y_tilde_core, self.Uk[L + i].T, mode=i + 1)
 
             RHS_G = np.tensordot(X_tilde, Y_tilde_core, axes=([0], [0]))
-            b_vec = RHS_G.ravel()
+            b_vec = RHS_G.ravel() # ravel() 列向量化
             dim_G = np.prod(self.ranks)
 
-            def matvec_G(v):
+            def matvec_G(v): # matvec_G 作用是给输入g，计算输出Ag
                 G_curr = v.reshape(self.ranks)
                 axes_X = list(range(1, L + 1))
                 axes_G = list(range(L))
-                Y_pred_core = np.tensordot(X_tilde, G_curr, axes=(axes_X, axes_G))
+                Y_pred_core = np.tensordot(X_tilde, G_curr, axes=(axes_X, axes_G))                                                                                       .tensordot(X_tilde, G_curr, axes=(axes_X, axes_G))
                 delta_G = np.tensordot(X_tilde, Y_pred_core, axes=([0], [0]))
                 return (delta_G + self.lambda_b * G_curr).ravel()
-
+                # 函数看着没啥问题  
+                # 函数的实现是参照公式12来的
             A_op = LinearOperator((dim_G, dim_G), matvec=matvec_G)
             G_opt_vec, info = cg(A_op, b_vec, x0=self.G.ravel(), rtol=1e-5)
+            # 第一个传入A，第二个传b 。A（G），如果传不了A，就得传算子
             self.G = G_opt_vec.reshape(self.ranks)
+            # 返回个结果出来就OK
 
             # ==========================================
             # Step 4: 更新因子矩阵 Uk (流形梯度下降)
@@ -663,6 +673,7 @@ class ROTR_fist_y:
             Pred_Global = self._contract_product(X_clean, B_curr, L)
             Diff = Pred_Global - Y_clean
             Grad_B = np.tensordot(X_clean, Diff, axes=([0], [0]))
+            # 为啥这梯度只有1个维度收缩？确实只有1个维度
 
             for k in range(total_modes):
                 current_Uk = self.Uk[k]
