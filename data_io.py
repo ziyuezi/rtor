@@ -940,7 +940,7 @@ def gen_rotr_mixed_data_adjust(**params):
             mask_y_flat[n,start:start+5] = True
 
         y = y_flat.reshape(N, *output_dims)
-        mask_y = mask_y_flat(N,*output_dims)
+        mask_y = mask_y_flat.reshape(N,*output_dims)
 
     # ==========================================
     # 7. 数据切分与返回
