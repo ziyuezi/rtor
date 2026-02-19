@@ -16,6 +16,19 @@ MODEL_MAP = {
     'rotr': ROTR_fist_y,
     'rpca_double': RPCA_Double
 }
+def prf_from_masks(pred_mask: np.ndarray, true_mask: np.ndarray, eps: float = 1e-12):
+    """
+    pred_mask/true_mask: bool array, same shape
+    """
+    tp = np.logical_and(pred_mask, true_mask).sum()
+    fp = np.logical_and(pred_mask, np.logical_not(true_mask)).sum()
+    fn = np.logical_and(np.logical_not(pred_mask), true_mask).sum()
+
+    precision = tp / (tp + fp + eps)
+    recall    = tp / (tp + fn + eps)
+    f1        = 2 * precision * recall / (precision + recall + eps)
+    return precision, recall, f1, tp, fp, fn
+
 
 
 def get_args():
@@ -109,6 +122,21 @@ if __name__ == '__main__':
                 while True:
                     try:
                         rpe, B, sparsity_sx, sparsity_sy = model.fit(verbose=True)
+
+                        # === 新增：X异常识别质量（entry-level）===
+                        sx_pred_mask = np.abs(model.Sx) > 0  # 或者 > 1e-12 更稳
+                        sx_true_mask = params['mask_x_train']  # shape与model.Sx一致
+
+                        p, r, f1, tp, fp, fn = prf_from_masks(sx_pred_mask, sx_true_mask)
+                        print(
+                            f"[{model.name}] Sx entry-level: P={p:.3f} R={r:.3f} F1={f1:.3f} | TP={tp} FP={fp} FN={fn}")
+
+                        sy_pred_mask = np.abs(model.Sy) > 0
+                        sy_true_mask = params['mask_y_train']
+
+                        p, r, f1, tp, fp, fn = prf_from_masks(sy_pred_mask, sy_true_mask)
+                        print(
+                            f"[{model.name}] Sy entry-level: P={p:.3f} R={r:.3f} F1={f1:.3f} | TP={tp} FP={fp} FN={fn}")
 
                         y_test = tl.partial_tensor_to_vec(params['y_test_gt'], skip_begin=1)
                         y_pre = ttt(params['x_test_clean'], B, params['L'], params['dims'])

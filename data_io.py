@@ -790,6 +790,197 @@ def gen_rotr_mixed_data(**params):
     return params
 
 
+def gen_rotr_mixed_data_adjust(**params):
+    # ==========================================
+    # 0. 参数解析
+    # ==========================================
+    # 基础维度参数
+
+    tucker_ranks = params['tucker_ranks']
+
+    N = params['N'] = 2000
+    L = params['L'] = 2
+    M = params['M'] = 2
+    dims = dims = params['dims'] = (15, 20, 5, 10)  # e.g., (15, 20, 5, 10)
+    input_dims = dims[:L]  # (15, 20)
+    output_dims = dims[L:]  # (5, 10)
+
+    input_dims = dims[:L]
+    output_dims = dims[L:]
+
+    # --- [混合异常配置] ---
+
+    # 1. 高杠杆样本 (High Leverage, Good): X大, Y大, Residual ≈ 0
+    # 这些样本用于测试模型是否能保留有用的极端值
+    leverage_ratio = params.get('leverage_ratio', 0.05)  # 10%
+    leverage_mag = params.get('leverage_mag', 10.0)  # 放大倍数
+
+    # 2. 坏 X 样本 (Bad X, Sx != 0): X被破坏, Y正常
+    # 这些样本用于测试模型能否分离 Sx
+    bad_x_ratio = params.get('bad_x_ratio', 0.05)  # 5%
+    bad_x_mag = params.get('bad_x_mag', 10.0)  # 破坏强度
+
+    # 3. 坏 Y 样本 (Bad Y, Sy != 0): X正常, Y被破坏
+    # 这些样本用于测试模型能否分离 Sy
+    bad_y_ratio = params.get('bad_y_ratio', 0.07)  # 5%
+    bad_y_mag = params.get('bad_y_mag', 10.0)  # 破坏强度
+
+    # 4. 背景噪音 (Dense Noise)
+    noise_level = params.get('dense_noise_level', 0.05)
+
+    # ==========================================
+    # 1. 生成系数张量 B (保持不变)
+    # ==========================================
+    rns_b = np.random.RandomState(seed=44)
+    factors_B = []
+    for i, d in enumerate(dims):
+        mat = rns_b.randn(d, tucker_ranks[i])
+        Q, _ = np.linalg.qr(mat)
+        factors_B.append(Q)
+    core_B = rns_b.randn(*tucker_ranks)
+    B_true = tucker_to_tensor((core_B, factors_B))
+    B_true = B_true / np.linalg.norm(B_true)
+
+    # ==========================================
+    # 2. 生成 X 的基底 (共享部分)
+    # ==========================================
+    rns_x = np.random.RandomState(seed=43)
+    factors_X_shared = []
+    for i in range(L):
+        mat = rns_x.randn(input_dims[i], tucker_ranks[i])
+        Q, _ = np.linalg.qr(mat)
+        factors_X_shared.append(Q)
+
+    # ==========================================
+    # 3. 样本索引分配
+    # ==========================================
+    indices_all = np.arange(N)
+    np.random.shuffle(indices_all)
+
+    n_lev = int(N * leverage_ratio)
+    n_bad_x = int(N * bad_x_ratio)
+    n_bad_y = int(N * bad_y_ratio)
+
+    idx_leverage = indices_all[:n_lev]
+    idx_bad_x = indices_all[n_lev: n_lev + n_bad_x]
+    idx_bad_y = indices_all[n_lev + n_bad_x: n_lev + n_bad_x + n_bad_y]
+    idx_normal = indices_all[n_lev + n_bad_x + n_bad_y:]
+
+    # ==========================================
+    # 4. 生成 X (包含正常 X 和 高杠杆 X)
+    # ==========================================
+    X_list = []
+    for n in range(N):
+        core_x = rns_x.uniform(0, 1, size=tucker_ranks[:L])
+
+        # [注入类型 1]: 高杠杆点 -> 放大核心
+        if n in idx_leverage:
+            core_x *= leverage_mag
+
+        x_i = tucker_to_tensor((core_x, factors_X_shared))
+        X_list.append(x_i)
+
+    X = np.array(X_list)
+    X_clean_gt = X.copy()
+
+
+    std_x_base = np.std(X[idx_normal])
+
+    # ==========================================
+    # 5. 生成 Y (基于当前的合法 X)
+    # ==========================================
+    y_clean = ttt(X, B_true, L, dims)
+    # === 新增：真值异常 mask（按元素）===
+    mask_x = np.zeros_like(X, dtype=bool)
+    mask_y = np.zeros_like(y_clean,dtype=bool)  # 初始值全为false
+
+    # 添加背景稠密噪声
+    std_y_base = np.std(y_clean[idx_normal])
+    dense_noise = np.random.normal(0, noise_level * std_y_base, size=y_clean.shape)
+    y = y_clean + dense_noise
+    y_ground_truth = y_clean.copy()
+    # ==========================================
+    # 6. 注入独立异常 (Bad Data)
+    # ==========================================
+
+    # --- [注入类型 2]: 坏 X (Bad X) ---
+    if n_bad_x > 0:
+        block_h, block_w = 5, 6
+        mag_x = bad_x_mag * std_x_base
+
+        for n in idx_bad_x:
+            # 随机位置
+            start_d0 = np.random.randint(0, max(1, input_dims[0] - block_h))
+            start_d1 = np.random.randint(0, max(1, input_dims[1] - block_w))
+
+            # 生成噪声块
+            noise_block = np.random.uniform(mag_x, 2 * mag_x, size=(block_h, block_w))
+            sign_block = np.random.choice([-1, 1], size=(block_h, block_w))
+
+            # 叠加破坏
+            X[n, start_d0: start_d0 + block_h, start_d1: start_d1 + block_w] += noise_block * sign_block
+            mask_x[n, start_d0: start_d0 + block_h, start_d1: start_d1 + block_w] = True
+    # --- [注入类型 3]: 坏 Y (Bad Y) ---
+    if n_bad_y > 0:
+        mag_y = bad_y_mag * std_y_base
+
+        y_flat = y.reshape(N, -1)
+        mask_y_flat = mask_y.reshape(N, -1)  # === 新增：mask也flatten ===
+        feat_len = y_flat.shape[1]
+
+        for n in idx_bad_y:
+            # 随机位置
+            start = np.random.randint(0, max(1, feat_len - 5))
+
+            # 生成稀疏噪声
+            noise_y = np.random.choice([-1, 1], size=5) * np.random.uniform(mag_y, 2 * mag_y, size=5)
+
+            # 叠加破坏
+            y_flat[n, start:start + 5] += noise_y
+            mask_y_flat[n,start:start+5] = True
+
+        y = y_flat.reshape(N, *output_dims)
+        mask_y = mask_y_flat(N,*output_dims)
+
+    # ==========================================
+    # 7. 数据切分与返回
+    # ==========================================
+    test_size = 400
+
+    params['x'] = X[test_size:]
+    params['y'] = y[test_size:]
+    params['x_test'] = X[:test_size]
+    params['y_test'] = y[:test_size]
+    params['B_true'] = B_true
+    params['y_test_gt'] = y_ground_truth[:test_size]
+    params['x_test_clean'] = X_clean_gt[:test_size]
+    # 新增：切分后的真值mask（train/test）
+    params['mask_x_train'] = mask_x[test_size:]
+    params['mask_y_train'] = mask_y[test_size:]
+    params['mask_x_test'] = mask_x[:test_size]
+    params['mask_y_test'] = mask_y[:test_size]
+
+
+    def filter_idx(indices):
+        return [i - test_size for i in indices if i >= test_size]
+
+    # 返回各种索引，用于评估模型
+    # 1. 高杠杆点 (应保留, Sx≈0, Sy≈0)
+    params['idx_leverage_train'] = filter_idx(idx_leverage)
+    # 2. 坏 X (应分离 Sx, Sx!=0)
+    params['idx_bad_x_train'] = filter_idx(idx_bad_x)
+    # 3. 坏 Y (应分离 Sy, Sy!=0)
+    params['idx_bad_y_train'] = filter_idx(idx_bad_y)
+
+    # 打印一些信息确认生成状态
+    print(f"Data Generation Summary:")
+    print(f"- Normal Std(X): {std_x_base:.4f}, Std(Y): {std_y_base:.4f}")
+    print(f"- High Leverage: {len(params['idx_leverage_train'])} samples (Mag: {leverage_mag}x)")
+    print(f"- Bad X Samples: {len(params['idx_bad_x_train'])} samples (Mag: {bad_x_mag}x)")
+    print(f"- Bad Y Samples: {len(params['idx_bad_y_train'])} samples (Mag: {bad_y_mag}x)")
+
+    return params
+
 
 def gen_egg_data(**params):
     eeg = loadmat('./EGGData/EEG_Processed_Data.mat')
