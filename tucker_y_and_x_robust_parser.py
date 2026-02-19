@@ -124,14 +124,14 @@ if __name__ == '__main__':
                         rpe, B, sparsity_sx, sparsity_sy = model.fit(verbose=True)
 
                         # === 新增：X异常识别质量（entry-level）===
-                        sx_pred_mask = np.abs(model.Sx) > 0  # 或者 > 1e-12 更稳
+                        sx_pred_mask = np.abs(model.Sx) > 1e-6  # 或者 > 1e-12 更稳
                         sx_true_mask = params['mask_x_train']  # shape与model.Sx一致
 
                         p, r, f1, tp, fp, fn = prf_from_masks(sx_pred_mask, sx_true_mask)
                         print(
                             f"[{model.name}] Sx entry-level: P={p:.3f} R={r:.3f} F1={f1:.3f} | TP={tp} FP={fp} FN={fn}")
 
-                        sy_pred_mask = np.abs(model.Sy) > 0
+                        sy_pred_mask = np.abs(model.Sy) > 1e-6
                         sy_true_mask = params['mask_y_train']
 
                         p, r, f1, tp, fp, fn = prf_from_masks(sy_pred_mask, sy_true_mask)
