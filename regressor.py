@@ -832,10 +832,18 @@ class ROTR_fist_y_speed:
                 # Nesterov 动量更新
                 t_new = 0.5 * (1.0 + np.sqrt(1.0 + 4.0 * t * t))
                 beta = (t - 1.0) / t_new
+                # after computing S_new and before updating Z
+
                 Z = S_new + beta * (S_new - S_prev)
 
                 S_prev = S_new
                 t = t_new
+            if verbose and iteration % 10 == 0:
+                print("  [Diag Sx]",
+                      "step=", step_size_Sx,
+                      "max|Grad|=", np.max(np.abs(Grad)),
+                      "max|step*Grad|=", np.max(np.abs(step_size_Sx * Grad)),
+                      "thr=", self.lambda_x * step_size_Sx)
 
             self.Sx = S_new
             # ===== end FISTA =====
@@ -934,6 +942,8 @@ class ROTR_fist_y_speed:
                     print(f"Converged at iteration {iteration} with RPE={rpe:.5f}")
 
                 break
+
+
         return rpe, self.B_full, sparsity_sx, sparsity_sy
 
 
