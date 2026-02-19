@@ -110,8 +110,8 @@ if __name__ == '__main__':
             )
 
             # 生成数据
-            params = io.gen_rotr_mixed_data(**params)
-
+            #params = io.gen_rotr_mixed_data(**params)
+            params = io.gen_rotr_mixed_data_adjust(**params)
             # 根据命令行参数动态实例化模型
             models_to_run = []
             for m_name in args.models:
