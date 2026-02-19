@@ -723,6 +723,221 @@ class ROTR_fist_y:
         return rpe, self.B_full, sparsity_sx, sparsity_sy
 
 
+class ROTR_fist_y_speed:
+    def __init__(self, **params):
+        self.ranks = params['ranks']
+        self.x = np.array(params['x'])
+        self.y = np.array(params['y'])
+        self.L = params['L']
+        self.M = params['M']
+
+        # 正则化参数
+        self.lambda_x = params['lambda_x']
+        self.lambda_y = params['lambda_y']
+        self.lambda_b = params['lambda_b']
+
+        # 优化参数
+        self.max_iter = params['ROTR_max_iter']
+        self.tol = params['tol']
+        self.fista_iter = params['fista_iter']
+        self.sx_max_step = params['sx_max_step']
+        self.manifold_lr = params['manifold_lr']
+        self.init_scale = params['init_scale']  # 控制核张量的数值大小
+        self.name = 'rotr'
+
+        # 内部状态
+        self.G = None
+        self.Uk = []
+        self.Sx = None
+        self.Sy = None
+        self.B_full = None
+
+    def _contract_product(self, X, B, L_dims):
+        # 张量收缩 <X, B>_L
+        x_ndim = X.ndim
+        axes_x = list(range(1, x_ndim))
+        axes_b = list(range(0, len(axes_x)))
+        return np.tensordot(X, B, axes=(axes_x, axes_b))
+
+    def _reconstruct_B(self):
+        # 重构系数张量
+        return multi_mode_dot(self.G, self.Uk)
+
+    def fit(self, verbose=True):
+        X = self.x
+        Y = self.y
+        N = X.shape[0]
+        L = self.L
+        M = self.M
+
+        input_dims = X.shape[1:]
+        output_dims = Y.shape[1:]
+        total_modes = L + M
+        current_ranks = self.ranks
+
+        # --- 1. 初始化 ---
+        self.Uk = []
+        for i in range(L):
+            U, _, _ = svd(np.random.randn(input_dims[i], current_ranks[i]), full_matrices=False)
+            # 换成qr分解
+            # U,_ = np.linalg.qr(np.random.randn(input_dims[i], current_ranks[i]))
+            self.Uk.append(U)
+        for i in range(M):
+            U, _, _ = svd(np.random.randn(output_dims[i], current_ranks[L + i]), full_matrices=False)
+            # U,_ = np.linalg.qr(np.random.randn(input_dims[i], current_ranks[L + i]))
+            self.Uk.append(U)
+
+        # 核心张量初始化 (缩放防止初始预测过大)
+        self.G = np.random.randn(*current_ranks) * self.init_scale
+
+        self.Sx = np.zeros_like(X)
+        self.Sy = np.zeros_like(Y)
+
+        loss_history = []
+        print(f"Starting ROTR Optimization (Max Iter: {self.max_iter})...")
+
+        for iteration in range(self.max_iter):
+            B = self._reconstruct_B()
+
+            # ==========================================
+            # Step 1: 更新预测变量异常 Sx (ISTA)
+            # ==========================================
+            Y_tilde = Y - self.Sy
+
+            # 动态计算步长
+            lipschitz_const = norm(B.ravel()) ** 2 + 1e-8
+
+            step_size_Sx = 1.0 / lipschitz_const
+            step_size_Sx = min(step_size_Sx, self.sx_max_step)  # 截断步长
+
+
+            # ===== FISTA for Sx =====
+            S_prev = self.Sx.copy()
+            Z = self.Sx.copy()
+            t = 1.0
+
+            for k_fista in range(self.fista_iter):
+                # 在动量点 Z 上计算梯度
+                X_curr = X - Z
+                pred = self._contract_product(X_curr, B, L)
+                Residual = Y_tilde - pred
+
+                axes_res = list(range(1, M + 1))
+                axes_B_out = list(range(L, L + M))
+                Grad = np.tensordot(Residual, B, axes=(axes_res, axes_B_out))
+
+                # 近端梯度步 + soft-threshold
+                S_new = soft_thresholding(Z - step_size_Sx * Grad, self.lambda_x * step_size_Sx)
+
+                # Nesterov 动量更新
+                t_new = 0.5 * (1.0 + np.sqrt(1.0 + 4.0 * t * t))
+                beta = (t - 1.0) / t_new
+                Z = S_new + beta * (S_new - S_prev)
+
+                S_prev = S_new
+                t = t_new
+
+            self.Sx = S_new
+            # ===== end FISTA =====
+
+            # ==========================================
+            # Step 2: 更新响应异常 Sy (Soft Thresholding)
+            # ==========================================
+            X_clean = X - self.Sx
+            Y_pred = self._contract_product(X_clean, B, L)
+            Residual_Sy = Y - Y_pred
+            self.Sy = soft_thresholding(Residual_Sy, self.lambda_y)
+            # ==========================================
+            # Step 3: 更新核心张量 G (CG + Implicit Operator)
+            # ==========================================
+            X_clean = X - self.Sx
+            Y_clean = Y - self.Sy
+
+            X_tilde = X_clean.copy()
+            for i in range(L):
+                X_tilde = mode_dot(X_tilde, self.Uk[i].T, mode=i + 1)
+
+            Y_tilde_core = Y_clean.copy()
+            for i in range(M):
+                Y_tilde_core = mode_dot(Y_tilde_core, self.Uk[L + i].T, mode=i + 1)
+
+            RHS_G = np.tensordot(X_tilde, Y_tilde_core, axes=([0], [0]))
+            b_vec = RHS_G.ravel() # ravel() 列向量化
+            dim_G = np.prod(self.ranks)
+
+            def matvec_G(v): # matvec_G 作用是给输入g，计算输出Ag
+                G_curr = v.reshape(self.ranks)
+                axes_X = list(range(1, L + 1))
+                axes_G = list(range(L))
+                Y_pred_core = np.tensordot(X_tilde, G_curr, axes=(axes_X, axes_G))
+                delta_G = np.tensordot(X_tilde, Y_pred_core, axes=([0], [0]))
+                return (delta_G + self.lambda_b * G_curr).ravel()
+                # 函数看着没啥问题
+                # 函数的实现是参照公式12来的
+            A_op = LinearOperator((dim_G, dim_G), matvec=matvec_G)
+            G_opt_vec, info = cg(A_op, b_vec, x0=self.G.ravel(), rtol=1e-5)
+            # 第一个传入A，第二个传b 。A（G），如果传不了A，就得传算子
+            self.G = G_opt_vec.reshape(self.ranks)
+            # 返回个结果出来就OK
+
+            # ==========================================
+            # Step 4: 更新因子矩阵 Uk (流形梯度下降)
+            # ==========================================
+            B_curr = self._reconstruct_B()
+            Pred_Global = self._contract_product(X_clean, B_curr, L)
+            Diff = Pred_Global - Y_clean
+            Grad_B = np.tensordot(X_clean, Diff, axes=([0], [0]))
+            # 为啥这梯度只有1个维度收缩？确实只有1个维度
+
+            for k in range(total_modes):
+                current_Uk = self.Uk[k]
+                B_neg_k = self.G.copy()
+                for i in range(total_modes):
+                    if i == k: continue
+                    B_neg_k = mode_dot(B_neg_k, self.Uk[i], mode=i)
+
+                axes_contract = [i for i in range(total_modes) if i != k]
+                Grad_Euc = np.tensordot(Grad_B, B_neg_k, axes=(axes_contract, axes_contract))
+
+                Ut_G = np.dot(current_Uk.T, Grad_Euc)
+                sym_Ut_G = 0.5 * (Ut_G + Ut_G.T)
+                Grad_Riem = Grad_Euc - np.dot(current_Uk, sym_Ut_G)
+
+                Uk_new_temp = current_Uk - self.manifold_lr * Grad_Riem  # 黎曼梯度这里取负号呢？ 理论上是取负号，我改成正号了。。
+                U_svd, _, Vh_svd = svd(Uk_new_temp, full_matrices=False)
+                self.Uk[k] = np.dot(U_svd, Vh_svd)
+
+            # ==========================================
+            # 监控与收敛检查
+            # ==========================================
+            # 需要rpe,sparsity
+            # 1. 更新全局系数 B (因为 G 和 Uk 刚刚更新过)
+            self.B_full = self._reconstruct_B()
+            # 2. 预测时必须使用去除异常后的输入: X - Sx
+            X_clean_eval = X - self.Sx
+            Y_hat = self._contract_product(X_clean_eval, self.B_full, L)
+            # 3. 计算 RPE: 必须与原始观测 Y 比较
+            norm_y = norm(Y)
+            norm_diff = norm(Y - Y_hat)
+            rpe = norm_diff / (norm_y + 1e-10)
+            # 4.计算稀疏度
+            sparsity_sx = (self.Sx.size - np.count_nonzero(self.Sx)) / self.Sx.size
+            sparsity_sy = (self.Sy.size - np.count_nonzero(self.Sy)) / self.Sy.size
+
+            loss_history.append(rpe)
+            if verbose and iteration % 10 == 0:
+                print(
+                    f"Iter {iteration}: RPE={rpe:.5f} | Sparsity(Sx)={sparsity_sx:.2%} | Sparsity(Sy)={sparsity_sy:.2%}")
+            # 5. 收敛检查
+            if iteration > 0 and abs(loss_history[-1] - loss_history[-2]) < self.tol:
+                if verbose:
+                    print(f"Converged at iteration {iteration} with RPE={rpe:.5f}")
+
+                break
+        return rpe, self.B_full, sparsity_sx, sparsity_sy
+
+
+
 
 
 class RPCA_Double:
