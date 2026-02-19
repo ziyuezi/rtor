@@ -5,7 +5,7 @@ import tensorly as tl
 import pandas as pd
 import time
 import argparse  # 新增
-from regressor import RPCA_tucker, RTOT_tucker, TOT_tucker, ROTR_fist_y, RPCA_Double, ttt
+from regressor import RPCA_tucker, RTOT_tucker, TOT_tucker, ROTR_fist_y, RPCA_Double, ttt,ROTR_fist_y_speed
 from collections import defaultdict
 
 # 定义模型映射，方便命令行调用
@@ -13,7 +13,7 @@ MODEL_MAP = {
     'rpca': RPCA_tucker,
     'rtot': RTOT_tucker,
     'tot': TOT_tucker,
-    'rotr': ROTR_fist_y,
+    'rotr': ROTR_fist_y_speed,
     'rpca_double': RPCA_Double
 }
 def prf_from_masks(pred_mask: np.ndarray, true_mask: np.ndarray, eps: float = 1e-12):
