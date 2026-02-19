@@ -131,6 +131,15 @@ if __name__ == '__main__':
                         print(
                             f"[{model.name}] Sx entry-level: P={p:.3f} R={r:.3f} F1={f1:.3f} | TP={tp} FP={fp} FN={fn}")
 
+                        bad_x_true = np.zeros(model.Sx.shape[0], dtype=bool)
+                        bad_x_true[params['idx_bad_x_train']] = True
+
+                        sx_nnz_ratio = (np.abs(model.Sx) > 1e-6).reshape(model.Sx.shape[0], -1).mean(axis=1)
+                        pred_bad = sx_nnz_ratio > 0.01  # 1%阈值（真块是10%，所以1%很合理）
+
+                        p, r, f1, tp, fp, fn = prf_from_masks(pred_bad, bad_x_true)
+                        print(f"Sx sample-level: P={p:.3f} R={r:.3f} F1={f1:.3f} | TP={tp} FP={fp} FN={fn}")
+
                         sy_pred_mask = np.abs(model.Sy) > 1e-6
                         sy_true_mask = params['mask_y_train']
 
