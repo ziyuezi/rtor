@@ -891,13 +891,14 @@ class ROTR_fist_y_speed:
             # ==========================================
             # Step 4: 更新因子矩阵 Uk (流形梯度下降)
             # ==========================================
-            B_curr = self._reconstruct_B()
-            Pred_Global = self._contract_product(X_clean, B_curr, L)
-            Diff = Pred_Global - Y_clean
-            Grad_B = np.tensordot(X_clean, Diff, axes=([0], [0]))
+
             # 为啥这梯度只有1个维度收缩？确实只有1个维度
 
             for k in range(total_modes):
+                B_curr = self._reconstruct_B()
+                Pred_Global = self._contract_product(X_clean, B_curr, L)
+                Diff = Pred_Global - Y_clean
+                Grad_B = np.tensordot(X_clean, Diff, axes=([0], [0]))
                 current_Uk = self.Uk[k]
                 B_neg_k = self.G.copy()
                 for i in range(total_modes):
@@ -923,10 +924,12 @@ class ROTR_fist_y_speed:
             self.B_full = self._reconstruct_B()
             # 2. 预测时必须使用去除异常后的输入: X - Sx
             X_clean_eval = X - self.Sx
-            Y_hat = self._contract_product(X_clean_eval, self.B_full, L)
+            Y_hat_clean = self._contract_product(X_clean_eval, self.B_full, L)
+            Y_hat_obs = Y_hat_clean+self.Sy
             # 3. 计算 RPE: 必须与原始观测 Y 比较
+            # 计算的带观测值误差的rpe
             norm_y = norm(Y)
-            norm_diff = norm(Y - Y_hat)
+            norm_diff = norm(Y - Y_hat_obs)
             rpe = norm_diff / (norm_y + 1e-10)
             # 4.计算稀疏度
             sparsity_sx = (self.Sx.size - np.count_nonzero(self.Sx)) / self.Sx.size
