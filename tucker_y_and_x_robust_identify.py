@@ -13,7 +13,7 @@ MODEL_MAP = {
     'rpca': RPCA_tucker,
     'rtot': RTOT_tucker,
     'tot': TOT_tucker,
-    'rotr': ROTR_fist_y_speed,
+    'rotr': ROTR_fist_y,
     'rpca_double': RPCA_Double
 }
 def prf_from_masks(pred_mask: np.ndarray, true_mask: np.ndarray, eps: float = 1e-12):
