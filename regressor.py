@@ -928,8 +928,9 @@ class ROTR_fist_y_speed:
             Y_hat_obs = Y_hat_clean+self.Sy
             # 3. 计算 RPE: 必须与原始观测 Y 比较
             # 计算的带观测值误差的rpe
+
             norm_y = norm(Y)
-            norm_diff = norm(Y - Y_hat_obs)
+            norm_diff = norm(Y - Y_hat_clean)
             rpe = norm_diff / (norm_y + 1e-10)
             # 4.计算稀疏度
             sparsity_sx = (self.Sx.size - np.count_nonzero(self.Sx)) / self.Sx.size
